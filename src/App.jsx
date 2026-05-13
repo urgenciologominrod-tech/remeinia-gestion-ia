@@ -1,262 +1,35 @@
 import { useMemo, useState } from 'react';
-import {
-  AlertTriangle,
-  BedDouble,
-  ClipboardList,
-  Gauge,
-  Hospital,
-  RefreshCcw,
-  ShieldAlert,
-  Stethoscope,
-  UserRoundX,
-  UsersRound,
-} from 'lucide-react';
 
-const demoData = {
-  hospital: 'Hospital Público Central REMEINIA',
-  service: 'Medicina Interna',
-  shift: 'Noche',
-  date: new Date().toISOString().slice(0, 10),
-  plannedNurses: 12,
-  presentNurses: 9,
-  patients: 68,
-  criticalPatients: 11,
-  adverseEvents: 2,
-  suppliesRisk: 'medio',
-  transfersPending: 7
-};
+const demo = { hospital:'Hospital Público Central REMEINIA', service:'Urgencias Adultos', shift:'Noche', date:new Date().toISOString().slice(0,10), plannedNurses:10, presentNurses:7, patients:32, criticalPatients:5, adverseEvents:3, suppliesRisk:'medio', transfersPending:4 };
+const qualityDemo = { m1Opp:24,m1Done:19,m2Opp:16,m2Done:10,m3Opp:11,m3Done:8,m4Opp:26,m4Done:20,m5Opp:18,m5Done:12 };
+const eventDemo = { eventType:'Caída hospitalaria', classification:'evento adverso', service:'Urgencias Adultos', shift:'Noche', description:'Paciente con riesgo alto presentó caída durante el turno. No se incluyen datos personales.', patientDamage:'si', contributors:'Sobrecarga del servicio, vigilancia continua limitada y ausencia temporal de familiar.', failedBarriers:'Revaloración de riesgo, rondas de vigilancia y señalización preventiva.', immediateAction:'Valoración inmediata, notificación a jefatura y registro del evento.' };
+const iaasDemo = { iaasType:'IVU asociada a catéter', cases:3, denominatorDays:920, bundleCompliance:82, service:'UCI Adulto', month:`${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}` };
 
-const qualityDemo = {
-  m1Opp: 24,
-  m1Done: 19,
-  m2Opp: 16,
-  m2Done: 10,
-  m3Opp: 11,
-  m3Done: 8,
-  m4Opp: 26,
-  m4Done: 20,
-  m5Opp: 18,
-  m5Done: 12
-};
+const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
+const pct=(a,b)=>Number(b)>0?(Number(a)/Number(b))*100:0;
+const riskConfig={verde:{label:'Verde',className:'verde',range:'0 - 24'},amarillo:{label:'Amarillo',className:'amarillo',range:'25 - 49'},rojo:{label:'Rojo',className:'rojo',range:'50 - 74'},critico:{label:'Crítico',className:'critico',range:'75 - 100'}};
 
-const eventDemo = {
-  eventType: 'Error de medicación (dosis omitida)',
-  classification: 'evento adverso',
-  service: 'Hospitalización Adulto',
-  shift: 'Tarde',
-  description: 'Paciente no recibió dosis programada por quiebre en comunicación del relevo.',
-  patientDamage: 'si',
-  contributors: 'Relevo incompleto, sobrecarga asistencial y hoja de tratamiento sin verificación cruzada.',
-  failedBarriers: 'Doble chequeo de administración, pase de guardia estructurado.',
-  immediateAction: 'Notificación a médico tratante, administración de dosis ajustada y vigilancia clínica.'
-};
+function Field({label,children}){return <label><span>{label}</span>{children}</label>}
+function TextInput({name,label,value,onChange,type='text'}){return <Field label={label}><input name={name} type={type} min="0" value={value} onChange={onChange}/></Field>}
+function Report({title,value}){return <div className="report-block"><h3>{title}</h3><textarea readOnly rows={12} value={value}/></div>}
 
-const iaasDemo = {
-  iaasType: 'IVU asociada a catéter',
-  cases: 3,
-  denominatorDays: 920,
-  bundleCompliance: 82,
-  service: 'UCI Adulto',
-  month: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`
-};
+export default function App(){
+ const [tab,setTab]=useState('gerencial');
+ const [form,setForm]=useState(demo); const [q,setQ]=useState(qualityDemo); const [ev,setEv]=useState(eventDemo); const [iaas,setIaas]=useState(iaasDemo);
+ const change=(setter)=>(e)=>{const {name,value}=e.target; setter(prev=>({...prev,[name]:value}))};
 
-const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
-const safePct = (done, opp) => (Number(opp) > 0 ? (Number(done) / Number(opp)) * 100 : 0);
+ const ger=useMemo(()=>{const planned=+form.plannedNurses||0,present=+form.presentNurses||0,patients=+form.patients||0,crit=+form.criticalPatients||0,events=+form.adverseEvents||0,trans=+form.transfersPending||0; const absenteeism=planned>0?((planned-present)/planned)*100:0; const ratio=present>0?patients/present:patients; const score=Math.round(clamp(clamp(absenteeism*1.2,0,30)+clamp((ratio-4)*4.5,0,30)+clamp(crit*1.4,0,20)+clamp(events*5,0,12)+clamp(trans*.8,0,8)+(form.suppliesRisk==='alto'?10:form.suppliesRisk==='medio'?5:1),0,100)); const level=score>=75?'critico':score>=50?'rojo':score>=25?'amarillo':'verde'; const risks=[['Ausentismo de enfermería',absenteeism],['Relación pacientes/enfermera',ratio],['Pacientes críticos',crit],['Eventos adversos',events],['Traslados pendientes',trans]].sort((a,b)=>b[1]-a[1]).slice(0,3).map(r=>r[0]); const actions=['Redistribuir actividades por riesgo clínico.','Priorizar pacientes críticos y vigilancia continua.','Reforzar prevención de caídas y medicación segura.','Documentar déficit operativo y decisiones tomadas.','Informar a supervisión el nivel de riesgo.']; const indicators=[`Ausentismo: ${absenteeism.toFixed(1)}%`,`Pacientes/enfermera: ${ratio.toFixed(2)}`,`Pacientes críticos: ${crit}`,`Eventos adversos: ${events}`]; const report=`REMEINIA Gestión IA - Alerta Gerencial\nHospital: ${form.hospital}\nServicio: ${form.service}\nTurno: ${form.shift}\nFecha: ${form.date}\n\nSemáforo: ${riskConfig[level].label} (${score}/100)\nAusentismo: ${absenteeism.toFixed(1)}%\nRelación pacientes/enfermera: ${ratio.toFixed(2)}\n\nRiesgos principales:\n- ${risks.join('\n- ')}\n\nPrioridad número uno:\n- ${risks[0]||'Seguimiento rutinario'}\n\nAcciones inmediatas:\n- ${actions.join('\n- ')}\n\nIndicadores a vigilar:\n- ${indicators.join('\n- ')}`; return {absenteeism,ratio,score,level,risks,actions,indicators,report};},[form]);
 
-const riskConfig = {
-  verde: { label: 'Verde', className: 'verde', range: '0 - 24' },
-  amarillo: { label: 'Amarillo', className: 'amarillo', range: '25 - 49' },
-  rojo: { label: 'Rojo', className: 'rojo', range: '50 - 74' },
-  critico: { label: 'Crítico', className: 'critico', range: '75 - 100' }
-};
+ const qual=useMemo(()=>{const moments=[1,2,3,4,5].map(i=>({id:i,title:['Antes de tocar al paciente','Antes de tarea limpia/aséptica','Después de riesgo de exposición a líquidos corporales','Después de tocar al paciente','Después del contacto con entorno del paciente'][i-1],opp:+q[`m${i}Opp`]||0,done:+q[`m${i}Done`]||0})).map(m=>({...m,adherence:pct(m.done,m.opp)})); const totalOpp=moments.reduce((a,m)=>a+m.opp,0), totalDone=moments.reduce((a,m)=>a+m.done,0), global=pct(totalDone,totalOpp), lowest=[...moments].sort((a,b)=>a.adherence-b.adherence)[0]; const level=global>=90?'verde':global>=75?'amarillo':global>=60?'rojo':'critico'; const rec=level==='verde'?'Mantener auditoría semanal.':level==='amarillo'?'Refuerzo focalizado en el momento de menor cumplimiento.':level==='rojo'?'Plan de choque por turno y retroalimentación inmediata.':'Intervención institucional inmediata y reentrenamiento.'; const report=`REMEINIA Gestión IA - Higiene de Manos OMS\nApego global: ${global.toFixed(1)}%\nSemáforo: ${riskConfig[level].label}\nMenor cumplimiento: M${lowest.id} - ${lowest.title} (${lowest.adherence.toFixed(1)}%)\n\nDetalle:\n${moments.map(m=>`- M${m.id}: ${m.adherence.toFixed(1)}% (${m.done}/${m.opp})`).join('\n')}\n\nRecomendación:\n- ${rec}`; return {moments,global,lowest,level,rec,report};},[q]);
 
-function App() {
-  const [activeTab, setActiveTab] = useState('gerencial');
-  const [formData, setFormData] = useState(demoData);
-  const [qualityData, setQualityData] = useState(qualityDemo);
-  const [eventData, setEventData] = useState(eventDemo);
-  const [iaasData, setIaasData] = useState(iaasDemo);
+ const eventCalc=useMemo(()=>{const categories=ev.classification==='evento centinela'?['Factores organizacionales','Comunicación','Insumos/equipo']:ev.classification==='evento adverso'?['Factores humanos','Carga laboral','Proceso']:['Proceso','Comunicación']; const corrective=['Analizar el caso en reunión de seguridad.','Estandarizar doble verificación o barrera crítica.','Documentar aprendizaje sin enfoque punitivo.']; const preventive=['Checklist breve por turno.','Pase de guardia estructurado SBAR.','Monitoreo semanal de barreras críticas.']; const report=`REMEINIA Gestión IA - Evento Adverso / Cuasifalla\nTipo: ${ev.eventType}\nClasificación: ${ev.classification}\nServicio: ${ev.service}\nTurno: ${ev.shift}\nDaño al paciente: ${ev.patientDamage}\n\nDescripción:\n${ev.description}\n\nCategorías de causa raíz inicial:\n- ${categories.join('\n- ')}\n\nFactores contribuyentes:\n${ev.contributors}\n\nBarreras fallidas:\n${ev.failedBarriers}\n\nAcción inmediata:\n${ev.immediateAction}\n\nAcciones correctivas:\n- ${corrective.join('\n- ')}\n\nAcciones preventivas:\n- ${preventive.join('\n- ')}`; return {categories,corrective,preventive,report};},[ev]);
 
-  const calculations = useMemo(() => {
-    const planned = Number(formData.plannedNurses) || 0;
-    const present = Number(formData.presentNurses) || 0;
-    const patients = Number(formData.patients) || 0;
-    const criticalPatients = Number(formData.criticalPatients) || 0;
-    const adverseEvents = Number(formData.adverseEvents) || 0;
-    const transfersPending = Number(formData.transfersPending) || 0;
+ const ia=useMemo(()=>{const cases=+iaas.cases||0,days=+iaas.denominatorDays||0,bundle=+iaas.bundleCompliance||0,rate=days>0?(cases/days)*1000:0; const level=rate<=1&&bundle>=95?'verde':rate<=3&&bundle>=85?'amarillo':rate<=5?'rojo':'critico'; const interp=level==='verde'?'Control adecuado del riesgo IAAS.':level==='amarillo'?'Riesgo moderado, fortalecer bundle.':level==='rojo'?'Riesgo alto, intervención inmediata de enfermería y control de infecciones.':'Riesgo crítico, activar plan intensivo y seguimiento diario.'; const actions=['Verificar bundle cama a cama.','Reforzar técnica aséptica.','Retirar dispositivos no indispensables.','Realizar huddle breve con enfermería y comité IAAS.']; const report=`REMEINIA Gestión IA - Indicadores IAAS\nTipo: ${iaas.iaasType}\nServicio: ${iaas.service}\nMes: ${iaas.month}\nCasos: ${cases}\nDías dispositivo/denominador: ${days}\nCumplimiento bundle: ${bundle.toFixed(1)}%\nTasa por 1,000 días: ${rate.toFixed(2)}\nSemáforo: ${riskConfig[level].label}\n\nInterpretación:\n${interp}\n\nAcciones prioritarias:\n- ${actions.join('\n- ')}`; return {rate,level,interp,actions,report};},[iaas]);
 
-    const absenteeism = planned > 0 ? ((planned - present) / planned) * 100 : 0;
-    const ratio = present > 0 ? patients / present : patients;
-
-    const absenteeismScore = clamp(absenteeism * 1.2, 0, 30);
-    const ratioScore = clamp((ratio - 4) * 4.5, 0, 30);
-    const criticalScore = clamp(criticalPatients * 1.4, 0, 20);
-    const eventsScore = clamp(adverseEvents * 5, 0, 12);
-    const transfersScore = clamp(transfersPending * 0.8, 0, 8);
-    const suppliesScore =
-      formData.suppliesRisk === 'alto' ? 10 : formData.suppliesRisk === 'medio' ? 5 : 1;
-
-    const riskScore = Math.round(
-      clamp(
-        absenteeismScore + ratioScore + criticalScore + eventsScore + transfersScore + suppliesScore,
-        0,
-        100
-      )
-    );
-
-    const riskLevel =
-      riskScore >= 75 ? 'critico' : riskScore >= 50 ? 'rojo' : riskScore >= 25 ? 'amarillo' : 'verde';
-
-    const risks = [
-      { name: 'Ausentismo de enfermería', weight: absenteeismScore },
-      { name: 'Relación pacientes/enfermera', weight: ratioScore },
-      { name: 'Pacientes críticos', weight: criticalScore },
-      { name: 'Eventos adversos del turno', weight: eventsScore },
-      { name: 'Traslados pendientes', weight: transfersScore },
-      { name: 'Riesgo de insumos', weight: suppliesScore }
-    ]
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 3);
-
-    const priorityOne = risks[0]?.name ?? 'Sin prioridad crítica';
-    const actions = [
-      'Reasignar personal a camas de mayor complejidad en los próximos 30 minutos.',
-      'Activar coordinación con jefatura para cobertura extraordinaria del turno.',
-      'Ejecutar ronda rápida de seguridad clínica en pacientes críticos.',
-      'Confirmar stock de insumos esenciales y solicitar reposición inmediata si aplica.'
-    ];
-    const indicators = [
-      `Tasa de ausentismo: ${absenteeism.toFixed(1)}%`,
-      `Relación pacientes/enfermera: ${ratio.toFixed(2)}`,
-      `Pacientes críticos en unidad: ${criticalPatients}`,
-      `Eventos adversos reportados: ${adverseEvents}`
-    ];
-    const report = `REMEINIA Gestión IA - Alerta Gerencial de Enfermería\nHospital: ${formData.hospital}\nServicio: ${formData.service}\nTurno: ${formData.shift}\nFecha: ${formData.date}\n\nSemáforo de riesgo: ${riskConfig[riskLevel].label} (${riskScore}/100)\nAusentismo: ${absenteeism.toFixed(1)}%\nRelación pacientes/enfermera: ${ratio.toFixed(2)}\n\nRiesgos principales:\n1. ${risks[0]?.name ?? '-'}\n2. ${risks[1]?.name ?? '-'}\n3. ${risks[2]?.name ?? '-'}\n\nPrioridad número uno:\n- ${priorityOne}\n\nAcciones inmediatas:\n- ${actions.join('\n- ')}\n\nIndicadores a vigilar:\n- ${indicators.join('\n- ')}`;
-
-    return { absenteeism, ratio, riskScore, riskLevel, risks, priorityOne, actions, indicators, report };
-  }, [formData]);
-
-  const qualityCalc = useMemo(() => {
-    const moments = [
-      { id: 1, title: 'Antes de tocar al paciente', opp: Number(qualityData.m1Opp), done: Number(qualityData.m1Done) },
-      { id: 2, title: 'Antes de tarea limpia/aséptica', opp: Number(qualityData.m2Opp), done: Number(qualityData.m2Done) },
-      { id: 3, title: 'Después de riesgo de exposición a líquidos corporales', opp: Number(qualityData.m3Opp), done: Number(qualityData.m3Done) },
-      { id: 4, title: 'Después de tocar al paciente', opp: Number(qualityData.m4Opp), done: Number(qualityData.m4Done) },
-      { id: 5, title: 'Después del contacto con entorno del paciente', opp: Number(qualityData.m5Opp), done: Number(qualityData.m5Done) }
-    ].map((m) => ({ ...m, adherence: safePct(m.done, m.opp) }));
-
-    const totalOpp = moments.reduce((acc, m) => acc + m.opp, 0);
-    const totalDone = moments.reduce((acc, m) => acc + m.done, 0);
-    const globalAdherence = safePct(totalDone, totalOpp);
-    const lowest = [...moments].sort((a, b) => a.adherence - b.adherence)[0];
-    const semaforo = globalAdherence >= 90 ? 'verde' : globalAdherence >= 75 ? 'amarillo' : globalAdherence >= 60 ? 'rojo' : 'critico';
-    const recommendation =
-      semaforo === 'verde'
-        ? 'Mantener auditoría semanal y retroalimentación positiva por servicio.'
-        : semaforo === 'amarillo'
-          ? 'Refuerzo focalizado en el momento de menor cumplimiento con observación directa diaria.'
-          : semaforo === 'rojo'
-            ? 'Plan de choque de adherencia: capacitación corta por turno + monitoreo de jefatura.'
-            : 'Intervención inmediata institucional con supervisión continua y reentrenamiento completo.';
-
-    const report = `REMEINIA Gestión IA - Indicadores de Calidad (Higiene de Manos OMS)\nApego global: ${globalAdherence.toFixed(1)}%\nSemáforo: ${riskConfig[semaforo].label}\nMomento con menor cumplimiento: M${lowest?.id} - ${lowest?.title} (${lowest?.adherence.toFixed(1)}%)\n\nDetalle por momento:\n${moments.map((m) => `- M${m.id}: ${m.adherence.toFixed(1)}% (${m.done}/${m.opp})`).join('\n')}\n\nRecomendación de mejora:\n- ${recommendation}`;
-
-    return { moments, globalAdherence, lowest, semaforo, recommendation, report };
-  }, [qualityData]);
-
-  const eventCalc = useMemo(() => {
-    const map = {
-      cuasifalla: ['Factores del proceso', 'Factores de comunicación'],
-      'evento adverso': ['Factores humanos', 'Factores de carga laboral', 'Factores del proceso'],
-      'evento centinela': ['Factores organizacionales', 'Factores de comunicación', 'Factores de insumos/equipo']
-    };
-    const rootCategories = map[eventData.classification] ?? ['Factores del proceso'];
-    const causes = rootCategories.map((c) => `Brecha identificada en ${c.toLowerCase()}.`);
-    const corrective = [
-      'Aplicar análisis de caso en reunión de seguridad del turno siguiente.',
-      'Estandarizar doble verificación en proceso crítico asociado.',
-      'Documentar aprendizaje y retroalimentar al equipo sin enfoque punitivo.'
-    ];
-    const preventive = [
-      'Implementar checklist breve de seguridad por turno.',
-      'Refuerzo de pase de guardia estructurado SBAR.',
-      'Monitoreo semanal de adherencia a barreras críticas.'
-    ];
-    const indicators = [
-      'Tasa de eventos similares por 1,000 pacientes-día.',
-      'Cumplimiento de barreras críticas (%).',
-      'Oportunidad de notificación (<24 h).',
-      'Cierre de acciones correctivas en tiempo (%).'
-    ];
-    const report = `REMEINIA Gestión IA - Reporte Preliminar de Evento\nTipo: ${eventData.eventType}\nClasificación: ${eventData.classification}\nServicio: ${eventData.service}\nTurno: ${eventData.shift}\nDaño al paciente: ${eventData.patientDamage}\n\nDescripción breve:\n${eventData.description}\n\nAnálisis causa raíz inicial:\n- ${rootCategories.join('\n- ')}\n\nCausas probables:\n- ${causes.join('\n- ')}\n\nAcciones correctivas:\n- ${corrective.join('\n- ')}\n\nAcciones preventivas:\n- ${preventive.join('\n- ')}\n\nIndicadores de seguimiento:\n- ${indicators.join('\n- ')}`;
-    return { rootCategories, causes, corrective, preventive, indicators, report };
-  }, [eventData]);
-
-  const iaasCalc = useMemo(() => {
-    const cases = Number(iaasData.cases) || 0;
-    const days = Number(iaasData.denominatorDays) || 0;
-    const bundle = Number(iaasData.bundleCompliance) || 0;
-    const rate = days > 0 ? (cases / days) * 1000 : 0;
-    const level = rate <= 1 && bundle >= 95 ? 'verde' : rate <= 3 && bundle >= 85 ? 'amarillo' : rate <= 5 ? 'rojo' : 'critico';
-    const interpretation =
-      level === 'verde'
-        ? 'Control adecuado del riesgo IAAS, mantener vigilancia activa.'
-        : level === 'amarillo'
-          ? 'Riesgo moderado, fortalecer adherencia a bundle y auditoría de práctica.'
-          : level === 'rojo'
-            ? 'Riesgo alto, requiere intervención inmediata del equipo de enfermería y control de infecciones.'
-            : 'Riesgo crítico institucional, activar plan intensivo y seguimiento diario de jefatura.';
-    const actions = [
-      'Verificar cumplimiento del bundle cama a cama en turno actual.',
-      'Reforzar técnica aséptica y mantenimiento de dispositivos invasivos.',
-      'Retiro oportuno de dispositivos no indispensables.',
-      'Huddle de 10 minutos con enfermería y comité IAAS.'
-    ];
-    const report = `REMEINIA Gestión IA - Indicadores IAAS\nTipo: ${iaasData.iaasType}\nServicio: ${iaasData.service}\nMes: ${iaasData.month}\nCasos: ${cases}\nDías dispositivo/denominador: ${days}\nCumplimiento bundle: ${bundle.toFixed(1)}%\nTasa por 1,000 días: ${rate.toFixed(2)}\nSemáforo: ${riskConfig[level].label}\n\nInterpretación gerencial:\n${interpretation}\n\nAcciones prioritarias de enfermería:\n- ${actions.join('\n- ')}`;
-    return { rate, level, interpretation, actions, report };
-  }, [iaasData]);
-
-  const onChange = (setter) => (event) => {
-    const { name, value } = event.target;
-    setter((prev) => ({ ...prev, [name]: value }));
-  };
-
-  return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="title-wrap">
-          <Hospital size={28} />
-          <div>
-            <h1>REMEINIA Gestión IA</h1>
-            <p>Alerta Gerencial de Enfermería · Congreso Internacional de Enfermería</p>
-          </div>
-        </div>
-        <div className="btn-group">
-          <button type="button" className="demo-btn" onClick={() => setFormData(demoData)}><RefreshCcw size={16} /> Demo Módulo 1</button>
-          <button type="button" className="demo-btn secondary" onClick={() => { setQualityData(qualityDemo); setEventData(eventDemo); setIaasData(iaasDemo); }}><RefreshCcw size={16} /> Demo Módulos 2-4</button>
-        </div>
-      </header>
-
-      <nav className="tabs">
-        {[
-          ['gerencial', 'Alerta Gerencial'],
-          ['calidad', 'Indicadores de Calidad'],
-          ['evento', 'Evento Adverso / Cuasifalla'],
-          ['iaas', 'Indicadores IAAS']
-        ].map(([id, label]) => (
-          <button key={id} className={activeTab === id ? 'tab active' : 'tab'} onClick={() => setActiveTab(id)}>{label}</button>
-        ))}
-      </nav>
-
-      {activeTab === 'gerencial' && <main className="grid-layout"><section className="card form-card"><h2><ClipboardList size={18} /> Datos mínimos del turno</h2><div className="form-grid">{[['hospital','Hospital'],['service','Servicio'],['shift','Turno'],['date','Fecha']].map(([name,label])=><label key={name}><span>{label}</span><input name={name} type={name==='date'?'date':'text'} value={formData[name]} onChange={onChange(setFormData)} /></label>)}{[['plannedNurses','Enfermeras planificadas'],['presentNurses','Enfermeras presentes'],['patients','Pacientes totales'],['criticalPatients','Pacientes críticos'],['adverseEvents','Eventos adversos'],['transfersPending','Traslados pendientes']].map(([name,label])=><label key={name}><span>{label}</span><input name={name} type="number" min="0" value={formData[name]} onChange={onChange(setFormData)} /></label>)}<label><span>Riesgo de insumos</span><select name="suppliesRisk" value={formData.suppliesRisk} onChange={onChange(setFormData)}><option value="bajo">Bajo</option><option value="medio">Medio</option><option value="alto">Alto</option></select></label></div></section><section className="card dashboard-card"><h2><Gauge size={18} /> Alerta gerencial</h2><div className={`semaforo ${riskConfig[calculations.riskLevel].className}`}><ShieldAlert size={24} /><div><strong>{riskConfig[calculations.riskLevel].label}</strong><p>Score: {calculations.riskScore}/100 · Rango {riskConfig[calculations.riskLevel].range}</p></div></div><div className="kpis"><article><UserRoundX size={16} /><span>Ausentismo</span><strong>{calculations.absenteeism.toFixed(1)}%</strong></article><article><UsersRound size={16} /><span>Pacientes / Enfermera</span><strong>{calculations.ratio.toFixed(2)}</strong></article><article><BedDouble size={16} /><span>Prioridad #1</span><strong>{calculations.priorityOne}</strong></article></div><div className="lists"><div><h3>Riesgos principales</h3><ul>{calculations.risks.map((risk) => <li key={risk.name}><AlertTriangle size={14} /> {risk.name}</li>)}</ul></div><div><h3>Acciones inmediatas</h3><ul>{calculations.actions.map((action) => <li key={action}><Stethoscope size={14} /> {action}</li>)}</ul></div><div><h3>Indicadores a vigilar</h3><ul>{calculations.indicators.map((item) => <li key={item}>{item}</li>)}</ul></div></div><div className="report-block"><h3>Reporte ejecutivo (copiar y enviar)</h3><textarea readOnly value={calculations.report} rows={12} /></div></section></main>}
-
-      {activeTab === 'calidad' && <main className="single-layout"><section className="card"><h2>🧼 Indicadores de Calidad · Higiene de Manos (OMS)</h2><div className="quality-grid">{qualityCalc.moments.map((moment)=> <article className="moment-card" key={moment.id}><h3>Momento {moment.id}</h3><p>{moment.title}</p><label><span>Oportunidades observadas</span><input type="number" min="0" name={`m${moment.id}Opp`} value={qualityData[`m${moment.id}Opp`]} onChange={onChange(setQualityData)} /></label><label><span>Acciones cumplidas</span><input type="number" min="0" name={`m${moment.id}Done`} value={qualityData[`m${moment.id}Done`]} onChange={onChange(setQualityData)} /></label><div className="tag">Apego: {moment.adherence.toFixed(1)}%</div></article>)}</div><div className={`semaforo ${riskConfig[qualityCalc.semaforo].className}`}><ShieldAlert size={24} /><div><strong>Semáforo de cumplimiento: {riskConfig[qualityCalc.semaforo].label}</strong><p>Apego global: {qualityCalc.globalAdherence.toFixed(1)}% · Menor cumplimiento: M{qualityCalc.lowest?.id}</p></div></div><p className="insight">Recomendación: {qualityCalc.recommendation}</p><div className="report-block"><h3>Reporte ejecutivo listo para copiar</h3><textarea readOnly value={qualityCalc.report} rows={12} /></div></section></main>}
-
-      {activeTab === 'evento' && <main className="single-layout"><section className="card"><h2>🚨 Evento Adverso / Cuasifalla</h2><div className="form-grid">{[['eventType','Tipo de evento'],['service','Servicio'],['shift','Turno']].map(([name,label])=> <label key={name}><span>{label}</span><input name={name} value={eventData[name]} onChange={onChange(setEventData)} /></label>)}<label><span>Clasificación</span><select name="classification" value={eventData.classification} onChange={onChange(setEventData)}><option value="cuasifalla">Cuasifalla</option><option value="evento adverso">Evento adverso</option><option value="evento centinela">Evento centinela</option></select></label><label><span>Daño al paciente</span><select name="patientDamage" value={eventData.patientDamage} onChange={onChange(setEventData)}><option value="no">No</option><option value="si">Sí</option></select></label></div><label><span>Descripción breve sin datos personales</span><textarea name="description" rows="3" value={eventData.description} onChange={onChange(setEventData)} /></label><label><span>Factores contribuyentes</span><textarea name="contributors" rows="2" value={eventData.contributors} onChange={onChange(setEventData)} /></label><label><span>Barreras que fallaron</span><textarea name="failedBarriers" rows="2" value={eventData.failedBarriers} onChange={onChange(setEventData)} /></label><label><span>Acción inmediata realizada</span><textarea name="immediateAction" rows="2" value={eventData.immediateAction} onChange={onChange(setEventData)} /></label><div className="lists"><div><h3>Causas probables</h3><ul>{eventCalc.causes.map((v)=> <li key={v}>{v}</li>)}</ul></div><div><h3>Acciones correctivas</h3><ul>{eventCalc.corrective.map((v)=> <li key={v}>{v}</li>)}</ul></div><div><h3>Acciones preventivas</h3><ul>{eventCalc.preventive.map((v)=> <li key={v}>{v}</li>)}</ul></div></div><div className="report-block"><h3>Reporte preliminar listo para copiar</h3><textarea readOnly value={eventCalc.report} rows={13} /></div></section></main>}
-
-      {activeTab === 'iaas' && <main className="single-layout"><section className="card"><h2>🦠 Indicadores IAAS</h2><div className="form-grid"><label><span>Tipo de IAAS</span><select name="iaasType" value={iaasData.iaasType} onChange={onChange(setIaasData)}><option>NAV</option><option>IVU asociada a catéter</option><option>ITS asociada a CVC</option><option>Infección de sitio quirúrgico</option><option>Otra</option></select></label>{[['cases','Número de casos'],['denominatorDays','Días dispositivo / denominador'],['bundleCompliance','Cumplimiento de bundle (%)'],['service','Servicio'],['month','Mes (YYYY-MM)']].map(([name,label])=> <label key={name}><span>{label}</span><input name={name} type={name==='service'||name==='month'?'text':'number'} min="0" value={iaasData[name]} onChange={onChange(setIaasData)} /></label>)}</div><div className={`semaforo ${riskConfig[iaasCalc.level].className}`}><ShieldAlert size={24} /><div><strong>Semáforo IAAS: {riskConfig[iaasCalc.level].label}</strong><p>Tasa: {iaasCalc.rate.toFixed(2)} por 1,000 días dispositivo</p></div></div><p className="insight">Interpretación gerencial: {iaasCalc.interpretation}</p><div><h3>Acciones prioritarias de enfermería</h3><ul>{iaasCalc.actions.map((a)=><li key={a}>{a}</li>)}</ul></div><div className="report-block"><h3>Reporte ejecutivo listo para copiar</h3><textarea readOnly value={iaasCalc.report} rows={12} /></div></section></main>}
-    </div>
-  );
+ return <div className="app-shell"><header className="topbar"><div className="title-wrap"><span>🏥</span><div><h1>REMEINIA Gestión IA</h1><p>Alerta Gerencial de Enfermería · Congreso Internacional de Enfermería</p></div></div><div className="btn-group"><button className="demo-btn" onClick={()=>setForm(demo)}>↻ Demo Módulo 1</button><button className="demo-btn secondary" onClick={()=>{setQ(qualityDemo);setEv(eventDemo);setIaas(iaasDemo)}}>↻ Demo Módulos 2-4</button></div></header><nav className="tabs">{[['gerencial','Alerta Gerencial'],['calidad','Indicadores de Calidad'],['evento','Evento Adverso / Cuasifalla'],['iaas','Indicadores IAAS']].map(([id,label])=><button key={id} className={tab===id?'tab active':'tab'} onClick={()=>setTab(id)}>{label}</button>)}</nav>
+ {tab==='gerencial'&&<main className="grid-layout"><section className="card"><h2>📋 Datos mínimos del turno</h2><div className="form-grid">{[['hospital','Hospital'],['service','Servicio'],['shift','Turno'],['date','Fecha']].map(([n,l])=><TextInput key={n} name={n} label={l} type={n==='date'?'date':'text'} value={form[n]} onChange={change(setForm)}/>)}{[['plannedNurses','Enfermeras planificadas'],['presentNurses','Enfermeras presentes'],['patients','Pacientes totales'],['criticalPatients','Pacientes críticos'],['adverseEvents','Eventos adversos'],['transfersPending','Traslados pendientes']].map(([n,l])=><TextInput key={n} name={n} label={l} type="number" value={form[n]} onChange={change(setForm)}/>) }<Field label="Riesgo de insumos"><select name="suppliesRisk" value={form.suppliesRisk} onChange={change(setForm)}><option value="bajo">Bajo</option><option value="medio">Medio</option><option value="alto">Alto</option></select></Field></div></section><section className="card"><h2>📊 Alerta gerencial</h2><div className={`semaforo ${riskConfig[ger.level].className}`}><strong>{riskConfig[ger.level].label}</strong><p>Score: {ger.score}/100 · Rango {riskConfig[ger.level].range}</p></div><div className="kpis"><article><span>Ausentismo</span><strong>{ger.absenteeism.toFixed(1)}%</strong></article><article><span>Pacientes / Enfermera</span><strong>{ger.ratio.toFixed(2)}</strong></article><article><span>Prioridad #1</span><strong>{ger.risks[0]}</strong></article></div><div className="lists"><div><h3>Riesgos principales</h3><ul>{ger.risks.map(x=><li key={x}>⚠️ {x}</li>)}</ul></div><div><h3>Acciones inmediatas</h3><ul>{ger.actions.map(x=><li key={x}>🩺 {x}</li>)}</ul></div><div><h3>Indicadores</h3><ul>{ger.indicators.map(x=><li key={x}>{x}</li>)}</ul></div></div><Report title="Reporte ejecutivo" value={ger.report}/></section></main>}
+ {tab==='calidad'&&<main className="single-layout"><section className="card"><h2>🧼 Indicadores de Calidad · Higiene de Manos</h2><div className="quality-grid">{qual.moments.map(m=><article className="moment-card" key={m.id}><h3>Momento {m.id}</h3><p>{m.title}</p><TextInput name={`m${m.id}Opp`} label="Oportunidades" type="number" value={q[`m${m.id}Opp`]} onChange={change(setQ)}/><TextInput name={`m${m.id}Done`} label="Acciones cumplidas" type="number" value={q[`m${m.id}Done`]} onChange={change(setQ)}/><div className="tag">Apego: {m.adherence.toFixed(1)}%</div></article>)}</div><div className={`semaforo ${riskConfig[qual.level].className}`}><strong>{riskConfig[qual.level].label}</strong><p>Apego global: {qual.global.toFixed(1)}% · Menor: M{qual.lowest.id}</p></div><p className="insight">Recomendación: {qual.rec}</p><Report title="Reporte ejecutivo" value={qual.report}/></section></main>}
+ {tab==='evento'&&<main className="single-layout"><section className="card"><h2>🚨 Evento Adverso / Cuasifalla</h2><div className="form-grid"><TextInput name="eventType" label="Tipo de evento" value={ev.eventType} onChange={change(setEv)}/><TextInput name="service" label="Servicio" value={ev.service} onChange={change(setEv)}/><TextInput name="shift" label="Turno" value={ev.shift} onChange={change(setEv)}/><Field label="Clasificación"><select name="classification" value={ev.classification} onChange={change(setEv)}><option value="cuasifalla">Cuasifalla</option><option value="evento adverso">Evento adverso</option><option value="evento centinela">Evento centinela</option></select></Field><Field label="Daño al paciente"><select name="patientDamage" value={ev.patientDamage} onChange={change(setEv)}><option value="no">No</option><option value="si">Sí</option></select></Field></div>{[['description','Descripción breve sin datos personales'],['contributors','Factores contribuyentes'],['failedBarriers','Barreras que fallaron'],['immediateAction','Acción inmediata']].map(([n,l])=><Field key={n} label={l}><textarea name={n} rows="3" value={ev[n]} onChange={change(setEv)}/></Field>)}<div className="lists"><div><h3>Categorías ACR</h3><ul>{eventCalc.categories.map(x=><li key={x}>{x}</li>)}</ul></div><div><h3>Correctivas</h3><ul>{eventCalc.corrective.map(x=><li key={x}>{x}</li>)}</ul></div><div><h3>Preventivas</h3><ul>{eventCalc.preventive.map(x=><li key={x}>{x}</li>)}</ul></div></div><Report title="Reporte preliminar" value={eventCalc.report}/></section></main>}
+ {tab==='iaas'&&<main className="single-layout"><section className="card"><h2>🦠 Indicadores IAAS</h2><div className="form-grid"><Field label="Tipo de IAAS"><select name="iaasType" value={iaas.iaasType} onChange={change(setIaas)}><option>NAV</option><option>IVU asociada a catéter</option><option>ITS asociada a CVC</option><option>Infección de sitio quirúrgico</option><option>Otra</option></select></Field>{[['cases','Número de casos'],['denominatorDays','Días dispositivo / denominador'],['bundleCompliance','Cumplimiento bundle (%)'],['service','Servicio'],['month','Mes']].map(([n,l])=><TextInput key={n} name={n} label={l} type={n==='service'||n==='month'?'text':'number'} value={iaas[n]} onChange={change(setIaas)}/>)}</div><div className={`semaforo ${riskConfig[ia.level].className}`}><strong>{riskConfig[ia.level].label}</strong><p>Tasa: {ia.rate.toFixed(2)} por 1,000 días dispositivo</p></div><p className="insight">Interpretación gerencial: {ia.interp}</p><ul>{ia.actions.map(x=><li key={x}>{x}</li>)}</ul><Report title="Reporte ejecutivo" value={ia.report}/></section></main>}
+ </div>;
 }
-
-export default App;
